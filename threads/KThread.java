@@ -272,14 +272,71 @@ public class KThread {
      * call is not guaranteed to return. This thread must not be the current
      * thread.
      */
-    public void join() {
-	Lib.debug(dbgThread, "Joining to thread: " + toString());
 
-	Lib.assertTrue(this != currentThread);
+	private boolean joinCalled = false; // join이 호출되었는지 여부를 추적하는 변수
+	private ThreadQueue joinQueue = null; // join을 대기하는 쓰레드를 관리하는 큐
 
-    }
+	public void join() {
+		Lib.debug(dbgThread, "Joining to thread: " + toString());
 
-    /**
+		Lib.assertTrue(this != currentThread); // 본인에 대해 join() 호출 못하게
+
+		boolean intStatus = Machine.interrupt().disable(); // 인터럽트 비활성화하여 원자적 실행 보장
+
+		// 이미 join이 호출된 쓰레드인지 확인
+		Lib.assertTrue(!joinCalled, "Join already called on thread: " + toString());
+		joinCalled = true;
+
+		// 이미 종료된 쓰레드인 경우 바로 리턴
+		if (status == statusFinished) {
+			Machine.interrupt().restore(intStatus);
+			return;
+		}
+
+		// 대기 큐에 현재 쓰레드를 추가 (이 쓰레드가 finish될 때까지 blocking)
+		if (joinQueue == null) {
+			joinQueue = ThreadedKernel.scheduler.newThreadQueue(false);
+			joinQueue.acquire(this);  // 이 스레드가 큐의 소유자
+		}
+
+		// 현재 실행 중인 쓰레드(join을 호출한 쓰레드)를 대기 상태로 변경
+		joinQueue.waitForAccess(currentThread);
+
+		// 현재 쓰레드 blocking
+		KThread.sleep();
+
+		// 인터럽트 상태 복원
+		Machine.interrupt().restore(intStatus);
+	}
+
+
+	private static void joinTest1 () {
+		KThread child1 = new KThread( new Runnable () {
+			public void run() {
+				System.out.println("I (heart) Nachos!");
+			}
+		});
+
+		child1.setName("child1").fork();
+
+		// We want the child to finish before we call join.  Although
+		// our solutions to the problems cannot busy wait, our test
+		// programs can!
+
+		for (int i = 0; i < 5; i++) {
+			System.out.println ("busy...");
+			KThread.currentThread().yield();
+		}
+
+		child1.join();
+		System.out.println("After joining, child1 should be finished.");
+		System.out.println("is it? " + (child1.status == statusFinished));
+		Lib.assertTrue((child1.status == statusFinished), " Expected child1 to be finished.");
+	}
+
+
+
+	/**
      * Create the idle thread. Whenever there are no threads ready to be run,
      * and <tt>runNextThread()</tt> is called, it will run the idle thread. The
      * idle thread must never block, and it will only be allowed to run when
@@ -329,25 +386,25 @@ public class KThread {
      * changed from running to blocked or ready (depending on whether the
      * thread is sleeping or yielding).
      *
-     * @param finishing <tt>true</tt> if the current thread is
+     * @paramfinishing <tt>true</tt> if the current thread is
      *				finished, and should be destroyed by the new
      *				thread.
      */
     private void run() {
-	Lib.assertTrue(Machine.interrupt().disabled());
+		Lib.assertTrue(Machine.interrupt().disabled());
 
-	Machine.yield();
+		Machine.yield();
 
-	currentThread.saveState();
+		currentThread.saveState();
 
-	Lib.debug(dbgThread, "Switching from: " + currentThread.toString()
-		  + " to: " + toString());
+		Lib.debug(dbgThread, "Switching from: " + currentThread.toString()
+			  + " to: " + toString());
 
-	currentThread = this;
+		currentThread = this;
 
-	tcb.contextSwitch();
+		tcb.contextSwitch();
 
-	currentThread.restoreState();
+		currentThread.restoreState();
     }
 
     /**
@@ -408,7 +465,8 @@ public class KThread {
 		new KThread(new PingTest(1)).setName("forked thread").fork();
 		new PingTest(0).run();
 
-		Alarm.selfTest();
+		//Alarm.selfTest();
+		joinTest1();
     }
 
     private static final char dbgThread = 't';
