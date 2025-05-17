@@ -274,7 +274,7 @@ public class KThread {
      */
 
 	private boolean joinCalled = false; // join이 호출되었는지 확인
-	private ThreadQueue joinQueue = null; // join을 대기하는 Thread를 관리하는 큐
+	private ThreadQueue joinQue = null; // join을 대기하는 Thread를 관리하는 큐
 
 	public void join() {
 		Lib.debug(dbgThread, "Joining to thread: " + toString());
@@ -294,13 +294,13 @@ public class KThread {
 		}
 
 		// 대기 큐에 현재 쓰레드를 추가 (이 쓰레드가 finish될 때까지 blocking)
-		if (joinQueue == null) {
-			joinQueue = ThreadedKernel.scheduler.newThreadQueue(false);
-			joinQueue.acquire(this);  // 이 스레드가 큐의 소유자
+		if (joinQue == null) {
+			joinQue = ThreadedKernel.scheduler.newThreadQueue(false);
+			joinQue.acquire(this);  // 이 스레드가 큐의 소유자
 		}
 
 		// 현재 실행 중인 쓰레드(join을 호출한 쓰레드)를 대기 상태로 변경
-		joinQueue.waitForAccess(currentThread);
+		joinQue.waitForAccess(currentThread);
 
 		KThread.sleep(); // 현재 쓰레드 blocking
 		Machine.interrupt().restore(intStatus); // 인터럽트 상태 복원
